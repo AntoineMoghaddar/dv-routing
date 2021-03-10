@@ -22,7 +22,7 @@ public class Program {
     private static String groupToken = "68b9120b-8622-45b9-afd6-c4be3f4aeffb";
 
     // Change to your protocol implementation
-    private static Class<? extends IRoutingProtocol> protocolImpl = MyRoutingProtocol.class;
+    private static Class<? extends IRoutingProtocol> protocolImpl = OptimizedDistanceVector.class;
 
     // Challenge server address
     private static String serverAddress = "networkingchallenges.ewi.utwente.nl";

@@ -14,7 +14,39 @@ package my_protocol;
  * in public places, to preserve the learning effect for future students. *
  **************************************************************************
  */
+/**
+ * Simple object which describes a route entry in the forwarding table.
+ * Can be extended to include additional data.
+ */
 public class DummyRoute {
-    public int nextHop;
-    public int cost;
+
+    private final int destination;
+    private final int nextHop;
+    private final int cost;
+    private final int hops;
+
+
+    public DummyRoute(int destination, int nextHop, int cost, int hops) {
+        this.cost = cost;
+        this.destination = destination;
+        this.nextHop = nextHop;
+        this.hops = hops;
+    }
+
+    public int getCost() {
+        return cost;
+    }
+
+    public int getDestination() {
+        return destination;
+    }
+
+    public int getNextHop() {
+        return nextHop;
+    }
+
+    public int getHops() {
+        return hops;
+    }
+
 }

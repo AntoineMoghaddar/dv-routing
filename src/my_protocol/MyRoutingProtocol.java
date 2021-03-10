@@ -1,9 +1,15 @@
 package my_protocol;
 
-import framework.*;
+import algorithm.DijkstraAlgorithm;
+import algorithm.Edge;
+import algorithm.Graph;
+import algorithm.Vertex;
+import framework.IRoutingProtocol;
+import framework.LinkLayer;
+import framework.Packet;
+import framework.PacketWithLinkCost;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
 /**
  * @version 12-03-2019
@@ -20,9 +26,17 @@ import java.util.Map;
  */
 public class MyRoutingProtocol implements IRoutingProtocol {
     private LinkLayer linkLayer;
+    private ConnectionTable cTable;
 
-    // You can use this data structure to store your routing table.
-    private HashMap<Integer, MyRoute> myRoutingTable = new HashMap<>();
+    private List<Vertex> vertex;
+    private List<Edge> edges;
+
+    private int currentTick;
+
+    public MyRoutingProtocol() {
+        cTable = new ConnectionTable();
+        currentTick = 0;
+    }
 
     @Override
     public void init(LinkLayer linkLayer) {
@@ -32,67 +46,72 @@ public class MyRoutingProtocol implements IRoutingProtocol {
 
     @Override
     public void tick(PacketWithLinkCost[] packetsWithLinkCosts) {
-        // Get the address of this node
-        int myAddress = this.linkLayer.getOwnAddress();
+        currentTick++;
+        System.out.print("pack: " + packetsWithLinkCosts.length);
+        cTable.removeAllLinksTo(linkLayer.getOwnAddress());
+        for (PacketWithLinkCost packet : packetsWithLinkCosts) {
+            //
+            ConnectionTable.Connection link = cTable.get(packet.getPacket().getSourceAddress(), linkLayer.getOwnAddress());
 
-        System.out.println("tick; received " + packetsWithLinkCosts.length + " packets");
-        int i;
-
-        // first process the incoming packets; loop over them:
-        for (i = 0; i < packetsWithLinkCosts.length; i++) {
-            Packet packet = packetsWithLinkCosts[i].getPacket();
-            int neighbour = packet.getSourceAddress();             // from whom is the packet?
-            int linkcost = packetsWithLinkCosts[i].getLinkCost();  // what's the link cost from/to this neighbour?
-            DataTable dt = packet.getDataTable();                  // other data contained in the packet
-            System.out.printf("received packet from %d with %d rows and %d columns of data%n", neighbour, dt.getNRows(), dt.getNColumns());
-
-            // you'll probably want to process the data, update your data structures (myRoutingTable) , etc....
-
-            // reading one cell from the DataTable can be done using the  dt.get(row,column)  method
-
-           /* example code for inserting a route into myRoutingTable:
-               MyRoute r = new MyRoute();
-               r.nextHop = ...someneighbour...;
-               myRoutingTable.put(...somedestination... , r);
-           */
-
-           /* example code for checking whether some destination is already in myRoutingTable, and accessing it:
-               if (myRoutingTable.containsKey(dest)) {
-                   MyRoute r = myRoutingTable.get(dest);
-                   // do something with r.cost and r.nextHop; you can even modify them
-               }
-           */
-
+            if (link != null) {
+                link.cost = packet.getLinkCost();
+                link.tick = currentTick;
+            } else {
+                cTable.add(packet.getPacket().getSourceAddress(), linkLayer.getOwnAddress(), packet.getLinkCost(), currentTick);
+            }
+            //
+            if (packet.getPacket().getRawData().length > 0) {
+                cTable.update(packet);
+            }
         }
 
-        // and send out one (or more, if you want) distance vector packets
-        // the actual distance vector data must be stored in the DataTable structure
-        DataTable dt = new DataTable(6);   // the 6 is the number of columns, you can change this
-        // you'll probably want to put some useful information into dt here
-        // by using the  dt.set(row, column, value)  method.
+        if (cTable.isEmpty()) {
+            Packet pct = new Packet(linkLayer.getOwnAddress(), 0, new byte[0]);
+            this.linkLayer.transmit(pct);
+        } else {
+            Packet pct = new Packet(linkLayer.getOwnAddress(), 0, cTable.serialize());
+            this.linkLayer.transmit(pct);
+        }
 
-        // next, actually send out the packet, with our own address as the source address
-        // and 0 as the destination address: that's a broadcast to be received by all neighbours.
-        Packet pkt = new Packet(myAddress, 0, dt);
-        this.linkLayer.transmit(pkt);
-
-        /*
-        Instead of using Packet with a DataTable you may also use Packet with
-        a byte[] as data part, if you really want to send your own data structure yourself.
-        Read the JavaDoc of Packet to see how you can do this.
-        PLEASE NOTE! Although we provide this option we do not support it.
-        */
+        System.out.println("\n" + cTable.toString());
     }
 
     public Map<Integer, Integer> getForwardingTable() {
-        // This code extracts from your routing table the forwarding table.
-        // The result of this method is send to the server to validate and score your protocol.
+        vertex = new ArrayList<>();
+        edges = new ArrayList<>();
+        List<Integer> nodes = new ArrayList<>();
 
-        // <Destination, NextHop>
+
+        for (ConnectionTable.Connection connection : cTable.getConnections()) {
+            if (!nodes.contains(connection.hostA))
+                nodes.add(connection.hostA);
+            if (!nodes.contains(connection.hostB))
+                nodes.add(connection.hostB);
+
+            for (Integer node : nodes) {
+                vertex.add(new Vertex(node, "Node " + node));
+            }
+        }
+
+        HashMap<Integer, Vertex> vertexMap = new HashMap<>();
+        for (Vertex vert : vertex) {
+            vertexMap.put(vert.getId(), vert);
+        }
+
+        for (ConnectionTable.Connection connection : cTable.getConnections()) {
+            edges.add(new Edge(vertexMap.get(connection.hostA), vertexMap.get(connection.hostB), connection.cost));
+        }
+        System.out.println("this is the size of the edges list: " + edges.size());
+        Graph graph = new Graph(vertex, edges);
+        DijkstraAlgorithm dijkstra = new DijkstraAlgorithm(graph);
+        dijkstra.execute(vertexMap.get(linkLayer.getOwnAddress()));
+
         HashMap<Integer, Integer> ft = new HashMap<>();
+        for (Map.Entry<Integer, Vertex> entry : vertexMap.entrySet()) {
+            LinkedList<Vertex> path = dijkstra.getPath(entry.getValue());
 
-        for (Map.Entry<Integer, MyRoute> entry : myRoutingTable.entrySet()) {
-            ft.put(entry.getKey(), entry.getValue().nextHop);
+            if (path != null && path.size() > 0)
+                ft.put(entry.getKey(), path.get(0).getId());
         }
 
         return ft;
